@@ -1,39 +1,38 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import useNewsInfiniteQuery from "@/hooks/useNewsInfiniteQuery";
+import { NewsItem, NewsListProps } from "@/types/newsList";
 
-const NewsList = ({
-  initialData,
-  currentPage,
-}: {
-  initialData?: any;
-  currentPage: number;
-}) => {
+const NewsList = ({ initialData, currentPage }: NewsListProps) => {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError } =
     useNewsInfiniteQuery(initialData, currentPage);
 
   const router = useRouter();
   const observerRef = useRef<HTMLDivElement | null>(null);
 
-  // Router logic for dynamic page navigation
+  const observerCallback = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, fetchNextPage, isFetchingNextPage]
+  );
+
   useEffect(() => {
     if (data?.pages.length && data.pages.length !== currentPage) {
-      router.push(`/news/page/${data.pages.length}`, { scroll: false });
+      if (data.pages.length > currentPage) {
+        router.replace(`/news/page/${data.pages.length}`, { scroll: false });
+      }
     }
   }, [data?.pages.length, currentPage, router]);
 
-  // Infinite scroll logic
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: "100px" }
-    );
+    const observer = new IntersectionObserver(observerCallback, {
+      rootMargin: "100px",
+    });
 
     if (observerRef.current) {
       observer.observe(observerRef.current);
@@ -44,12 +43,16 @@ const NewsList = ({
         observer.unobserve(observerRef.current);
       }
     };
-  }, [hasNextPage, fetchNextPage, isFetchingNextPage]);
+  }, [observerCallback]);
 
   if (isError)
     return (
-      <div className="text-red-500 text-center mt-4">Error fetching news</div>
+      <div className="text-red-500 text-center mt-4">
+        Error fetching news. Please try again later.
+      </div>
     );
+
+  if (isFetchingNextPage) return <div className="text-center">Loading...</div>;
 
   return (
     <div className="max-w-5xl mx-auto p-4">
@@ -60,7 +63,7 @@ const NewsList = ({
       <div className="space-y-6">
         {data?.pages.map((page, i) => (
           <div key={i} className="space-y-4">
-            {page.news.map((item: any) => (
+            {page.news.map((item: NewsItem) => (
               <div
                 key={item.id}
                 className="border border-yellow-500 shadow-lg rounded-lg p-6 hover:shadow-xl transition-shadow duration-300"
@@ -75,8 +78,10 @@ const NewsList = ({
         ))}
       </div>
 
+      {/* Infinite scroll trigger element */}
       <div ref={observerRef} className="h-10" />
 
+      {/* Fallback navigation link for users with JavaScript disabled */}
       <noscript>
         <a
           href={`/news/page/${data?.pages.length + 1}`}
